@@ -1,0 +1,314 @@
+---
+title: "Welligence Technical Assesment"
+author: "Rohit"
+date: 'April 13 2024'
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+---
+
+
+```{r}
+
+
+# installing required R packages.
+
+
+# Install necessary packages
+# install.packages("rmarkdown")
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("forecast")
+# install.packages("ggplot2")
+# install.packages("zoo")
+
+ 
+```
+
+
+```{r}
+library(rmarkdown)
+
+# Reading the CSV file
+data <- read.csv("test.csv")
+data <- data[, -1]
+
+# Displaying the first few rows of the data
+head(data)
+
+
+
+```
+
+
+```{r}
+# Load necessary libraries for visualizations to understand data better
+library(tidyverse)
+library(forecast)
+library(lubridate)
+library(ggplot2)
+library(tseries)
+
+
+data_viz <- data
+data_viz$period <- ymd(data_viz$period)  # ensure 'period' is in the correct date format
+
+# Creating time series object
+oil_ts_viz <- ts(data_viz$oil, frequency = 12)  # adjust frequency based on the known seasonality
+
+# Seasonal decomposition
+decomposed_viz <- stl(oil_ts_viz, s.window = "periodic")
+plot(decomposed_viz)
+
+# ACF and PACF plots
+acf(oil_ts_viz, main = "Autocorrelation Function")
+pacf(oil_ts_viz, main = "Partial Autocorrelation Function")
+
+# Augmented Dickey-Fuller Test for stationarity
+adf_test <- adf.test(oil_ts_viz, alternative = "stationary")
+print(paste("ADF Test p-value:", adf_test$p.value))
+
+# Plotting first difference to achieve stationarity
+diff_oil_viz <- diff(oil_ts_viz)
+data_diff_viz <- data[-1,]  # removing the first row because differencing reduces the length by 1
+data_diff_viz$diff_oil_viz <- diff_oil_viz  # add differenced data to the dataframe
+
+
+```
+
+
+
+
+
+```{r}
+# Loading necessary libraries
+library(tidyverse)
+
+# Converting the 'period' column to a Date format
+data$period <- as.Date(data$period, format = "%d-%m-%Y")
+
+# Aggregating data by period and well_name
+aggregated_data <- data %>%
+  group_by(period, well_name) %>%
+  summarize_all(sum) %>%
+  ungroup()
+
+# Reshaping the data frame to have well names as columns and date (period) as rows
+series <- aggregated_data %>%
+  pivot_wider(names_from = well_name, values_from = c(oil, gas_total),
+              names_sep = "_")
+
+head(series)
+
+# This code chunk loads the "tidyverse" library for data manipulation, converts the 'period' column to a Date format, aggregates data by 'period' and 'well_name', and reshapes the dataframe to have well names as columns and dates as rows. This restructuring facilitates easier analysis and visualization of the data, providing a concise summary of oil and gas production over time for each well.
+
+```
+
+```{r}
+library(dplyr)
+
+# Grouping data by well_name
+well_data <- data %>%
+  group_by(well_name) %>%
+  summarize(
+    avg_gas_to_oil_ratio = mean(gas_total / oil),
+    months_of_production = n_distinct(period),
+    initial_oil_production_date = min(period),
+    avg_monthly_decline_rate_gas = (last(gas_total) - first(gas_total)) / months_of_production
+  )
+
+# Printing the resulting data frame
+well_data
+
+# This code chunk utilizes the "dplyr" library to group the data by 'well_name' and calculate several summary statistics. Specifically, it computes the average gas-to-oil ratio, the total number of months of production, the initial oil production date, and the average monthly decline rate of gas production for each well. The resulting dataframe, 'well_data', provides valuable insights into the production characteristics of each well, facilitating informed decision-making and resource management
+
+```
+
+```{r}
+library(dplyr)
+unwanted_well_data <- well_data %>%
+  filter(months_of_production < 24 | avg_gas_to_oil_ratio <= 0)
+
+unwanted_well_data
+
+# This code chunk employs the "dplyr" library to filter out unwanted well data based on given requirement.selecting wells with either less than 24 months of production or an average gas-to-oil ratio less than or equal to 0. The resulting dataframe, 'unwanted_well_data', provides a subset of wells that may require further investigation or action, such as optimization or reassessment, due to their production characteristics falling below certain thresholds or expectations.
+```
+
+
+```{r}
+# Filter out unwanted well names from the data sample
+req_data <- data %>%
+  filter(!(well_name %in% unwanted_well_data$well_name))
+
+# Print the filtered data
+#print(req_data)
+head(req_data)
+
+# This code chunk filters out unwanted well names from the original data sample based on the criteria defined in the previous step. It excludes wells that were identified as undesirable due to either having less than 24 months of production or an average gas-to-oil ratio less than or equal to 0. The resulting dataframe, 'req_data', contains a refined subset of wells that meet the specified criteria and are suitable for further analysis or modeling.
+
+```
+
+
+
+```{r}
+# Loading required libraries
+library(dplyr)
+
+# Converting the period column to Date format if it's not already
+req_data$period <- as.Date(req_data$period)
+
+# Creating a list to store dataframes
+time_series_list <- list()
+
+# Group the data by well_name and creating dataframes
+unique_well_names <- unique(req_data$well_name)
+for (well_name in unique_well_names) {
+  # Subset data for the current well_name
+  well_data <- req_data[req_data$well_name == well_name, ]
+  
+  # Create a dataframe for the current well_name
+  well_df <- data.frame(period = well_data$period, oil_values = well_data$oil)
+  print(sum(well_df$oil_values))
+  # Append the dataframe to the time_series_list
+  time_series_list[[well_name]] <- well_df
+}
+
+# View the structure of time_series_list
+typeof(time_series_list)
+
+# This code chunk begins by loading the "dplyr" library, which is used for data manipulation. It then converts the 'period' column to a Date format if it's not already in that format. Next, it initializes an empty list called 'time_series_list' to store dataframes.
+# The code iterates over unique well names in the dataset and subsets the data for each well name. For each well name, it creates a dataframe containing the 'period' and 'oil_values' columns. The 'oil_values' represent the oil production values associated with each period for the respective well.After creating the dataframe for each well, it prints the sum of oil production values for each well, providing a summary of total oil production.Finally, it views the structure of the 'time_series_list' object, confirming that it is a list.Overall, this code processes the data for each well name, organizing it into separate dataframes stored within a list for further analysis or modeling.
+```
+
+
+
+```{r}
+# Modelling Part
+library(forecast)
+library(dplyr)
+
+# Defining empty list to store validation results
+validation_results <- list()
+
+forecasts_list <- list()
+
+# Looping over each well's time series data
+for (i in 1:length(time_series_list)) {
+  # Extract well_name and time_series
+  
+  df <- time_series_list[i]
+  field_name = names(df)
+  df = df[[field_name]]
+  df <- df[order(df$period), ]
+  
+  df <- rownames_to_column(df, var = "index")
+  
+  period <- as.Date(df$period, format = "%Y-%m-%d")
+
+  oil_values <- df$oil_values
+  
+  # Split the data into training and testing sets
+  start_train <- period[1]  # Start of the time series
+  end_train <-  period[length(period) - 6]  # 6 months before the end
+  start_test <- period[length(period) - 5]  # Immediately after end_train
+  end_test <- period[length(period)] # End of the time series
+  
+  train_indices <- which(period >= start_train & period <= end_train)
+  test_indices <- which(period >= start_test & period <= end_test)
+  
+  train_data <- oil_values[train_indices]
+  test_data <- oil_values[test_indices]
+  
+  # Fitting a forecast model (e.g., ARIMA) on the training data
+  model <- auto.arima(train_data)
+
+  # Making predictions on the testing data
+  forecasts <- forecast(model, h = length(test_data))
+
+  historical_data <- train_data
+  prediction_dates <- seq(end_train + 1, end_test, by = "month")
+  
+  train_period <- period[train_indices]
+  test_period <- period[test_indices]
+
+  predictions_df <- data.frame(
+    period = c(train_period, test_period),
+    historical = c(historical_data, rep(NA, length(test_period))),
+    predicted = c(fitted(forecasts), forecasts$mean)
+    )
+  forecasts_list[[field_name]] <- predictions_df
+
+  # Excluding rows with NA values in either historical or predicted column
+  predicted_df <- na.omit(predictions_df)
+  
+  # Calculating absolute percentage error for each row
+  absolute_percentage_error <- abs((predicted_df$predicted - predicted_df$historical) / predicted_df$historical)
+  
+  # Weight each absolute percentage error by historical value
+  weighted_absolute_percentage_error <- absolute_percentage_error * predicted_df$historical
+  
+  # Calculate the weighted mean absolute percentage error (WMAPE)
+  wmape <- sum(weighted_absolute_percentage_error) / sum(predicted_df$historical) * 100
+  cat("Weighted Mean Absolute Percentage Error (WMAPE) for ", field_name, ": ", wmape, "%\n", sep = "")
+
+}
+
+# 
+# This code chunk begins by loading the "forecast" and "dplyr" libraries, which are essential for time series forecasting and data manipulation, respectively.It then defines an empty list, 'validation_results', to store the validation results for each well's time series data.Inside the loop that iterates over each well's time series data, the code extracts the dataframe for the current well and orders it by the 'period' column. It then preprocesses the data, splitting it into training and testing sets.The code fits a forecast model (e.g., ARIMA) on the training data and makes predictions on the testing data using the 'auto.arima()' and 'forecast()' functions, respectively.
+#
+# Next, we construct a dataframe, 'predictions_df', containing the historical and predicted oil production values, and adds it to the 'forecasts_list'.
+# 
+# The code calculates the Weighted Mean Absolute Percentage Error (WMAPE) for each well's predictions. This error metric quantifies the accuracy of the forecasted values compared to the actual values, weighted by the historical production levels.
+# 
+# Finally, i had printed the WMAPE for each well, providing insights into the forecast accuracy across different wells in the dataset. This analysis helps assess the performance of the forecasting models and identify areas for improvement in production forecasting strategies.
+# 
+
+```
+
+
+```{r}
+
+plot_predicted_forecast <- function(list_df, field_name) {
+  # Excluding NA values
+  dataframe = list_df[field_name]
+  dataframe <- dataframe[[field_name]]
+  # dataframe <- na.omit(dataframe)
+  # Extracting predicted and forecast values
+  period <- dataframe$period
+  historical <- dataframe$historical
+  predicted <- dataframe$predicted
+  
+  print(historical)
+  print(predicted)
+  # Plotting historical values
+  plot(period, historical, type = "l", col = "blue", xlab = "Period", ylab = "Value", main = "Historical vs. Predicted")
+  
+  # Adding predicted values to the plot
+  lines(period, predicted, col = "red")
+  
+  # Adding legend
+  legend("topright", legend = c("Historical", "Predicted"), col = c("blue", "red"), lty = 1, cex = 0.8)
+  
+}
+
+plot_predicted_forecast(forecasts_list, "FIELD97D")
+
+
+# This code chunk defines a function named 'plot_predicted_forecast' that generates a plot comparing historical and predicted oil production values for a specified well, identified by its field name.
+# 
+# Inside the function, it extracts the dataframe corresponding to the specified well from the 'forecasts_list'.
+# 
+# It then retrieves the 'period', 'historical', and 'predicted' values from the dataframe and plots the historical values as a blue line using the 'plot()' function.
+# 
+# Subsequently, it overlays the predicted values as a red line on the same plot using the 'lines()' function.
+# 
+# Additionally, it adds a legend to the plot to differentiate between historical and predicted values.
+# 
+# Finally, the function is called with the specified well's field name, generating a graphical representation of historical and predicted oil production trends for that well. This visualization aids in assessing the accuracy of the forecasting model and understanding production trends over time.
+# 
+
+```
+
+
